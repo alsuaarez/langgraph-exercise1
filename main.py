@@ -3,6 +3,7 @@ import logging
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from bson import ObjectId
+from typing import List
 
 # Configurar logging
 logging.basicConfig(level=logging.INFO)
@@ -210,7 +211,84 @@ async def delete_course(id: str):
         raise HTTPException(status_code=404, detail="Course not found")
     logger.info(f"Course with ID: {id} deleted successfully")
     return {"message": "Course deleted successfully"}
+
+
+#agregar un estudiante a un curso
+@app.put("/courses/{course_id}/add_student_ids")
+async def add_student_ids_to_course(course_id: str, student_ids: List[str]):
+    logger.info(f"Received request to add student IDs to course with ID: {course_id}")
+    try:
+        course_obj_id = ObjectId(course_id)
+    except Exception:
+        logger.error(f"Invalid course ID format: {course_id}")
+        raise HTTPException(status_code=400, detail="Invalid course ID format")
+
+    # Verificar que todos los IDs de estudiantes sean válidos
+    try:
+        student_obj_ids = [ObjectId(student_id) for student_id in student_ids]
+    except Exception:
+        logger.error("One or more student IDs are invalid")
+        raise HTTPException(status_code=400, detail="Invalid student ID format")
+
+    # Verificar que los estudiantes existan
+    existing_students = list(db.students.find({"_id": {"$in": student_obj_ids}}))
+    if len(existing_students) != len(student_ids):
+        logger.warning("Some student IDs do not exist")
+        raise HTTPException(status_code=404, detail="Some student IDs do not exist")
+
+    # Actualizar el curso agregando los IDs de los estudiantes
+    result = db.courses.update_one(
+        {"_id": course_obj_id},
+        {"$addToSet": {"alumnos": {"$each": student_ids}}}
+    )
+
+    if result.matched_count == 0:
+        logger.warning(f"Course not found with ID: {course_id}")
+        raise HTTPException(status_code=404, detail="Course not found")
+
+    logger.info(f"Student IDs added to course with ID: {course_id} successfully")
+    return {"message": "Student IDs added successfully"}
+
+#ver alumnos de un curso con los atributos de los estudiantes
+@app.get("/courses/{course_id}/students")
+async def get_students_by_course(course_id: str):
+    logger.info(f"Received request to get students by course with ID: {course_id}")
     
+    # Buscar el curso por su ID
+    course = db.courses.find_one({"_id": ObjectId(course_id)})
+    if course is None:
+        logger.warning(f"Course not found with ID: {course_id}")
+        raise HTTPException(status_code=404, detail="Course not found")
+    
+    # Obtener los IDs de los estudiantes del curso
+    student_ids = course.get("alumnos", [])
+    
+    # Convertir los IDs a ObjectId
+    student_obj_ids = [ObjectId(student_id) for student_id in student_ids]
+    
+    # Buscar los detalles de los estudiantes
+    students = list(db.students.find({"_id": {"$in": student_obj_ids}}))
+    
+    # Convertir el _id de cada estudiante a string
+    for student in students:
+        student["_id"] = str(student["_id"])
+    
+    # Reemplazar los IDs de los estudiantes con los documentos completos
+    course["alumnos"] = students
+    course["_id"] = str(course["_id"])
+    
+    logger.info(f"Returning students for course with ID: {course_id}")
+    return course
+
+
+
+
+
+
+
+
+
+
 
 
 
