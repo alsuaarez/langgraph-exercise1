@@ -37,7 +37,7 @@ async def create_student(student: Student):
         "massage": "Student created successfully"
     }
 
-        
+#buscar todos los estudiantes
 @app.get("/students")
 async def get_students():
     students= list(db.students.find())
@@ -45,6 +45,7 @@ async def get_students():
         student["_id"] = str(student["_id"])
     return students
 
+#buscar por nombre
 @app.get("/students/oneStudent/{name}")
 async def get_one_student(name: str):
     student= db.students.find_one({"name": name}) #buscar por nombre
@@ -53,6 +54,7 @@ async def get_one_student(name: str):
     student["_id"] = str(student["_id"])
     return student
 
+#buscar por id
 @app.get("/students/oneStudentbyId/{id}")
 async def get_one_student_by_id(id:str):
     student = db.students.find_one({"_id": ObjectId(id)})
@@ -61,6 +63,17 @@ async def get_one_student_by_id(id:str):
     student["_id"] = str(student["_id"])
     return student
 
+#buscar por nombre
+@app.get("/students/{name}")
+async def get_student_by_name(name: str):
+    students = list(db.students.find({"name": name}))
+    if not students:
+        raise HTTPException(status_code=404, detail="Student not found")
+    for student in students:
+        student["_id"] = str(student["_id"])
+    return students
+
+#actualizar por id
 @app.put("/students/updateStudent/{id}")
 async def update_student(id: str, student: Student):
     try:
@@ -78,6 +91,7 @@ async def update_student(id: str, student: Student):
 
     return {"message": "Student updated successfully"}
 
+#eliminar por id
 @app.delete("/students/deleteStudent/{id}")
 async def delete_student(id: str):
     result = db.students.delete_one({"_id": ObjectId(id)})
