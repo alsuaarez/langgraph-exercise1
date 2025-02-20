@@ -20,10 +20,18 @@ try:
 except Exception as e:
     logging.error("Error")
     
-#definir el modelo de datos
+#definir el modelo de datos Student
 class Student(BaseModel):
     name: str
     age: int
+
+#definir el modelo de datos Course
+class Course(BaseModel):
+    name: str
+    facultad: str
+    alumnos: list[Student]
+
+
 
 #crear un estudiante
 @app.post("/students")
@@ -118,4 +126,92 @@ async def delete_student(id: str):
     logger.info(f"Student with ID: {id} deleted successfully")
     return {"message": "Student deleted successfully"}
     
+#buscar todos los cursos
+@app.get("/courses")
+async def get_courses():
+    logger.info("Received request to get all courses")
+    courses = list(db.courses.find())
+    for course in courses:
+        course["_id"] = str(course["_id"])
+    logger.info(f"Returning {len(courses)} courses")
+    return courses
+
+#buscar un curso por id
+@app.get("/courses/oneCourse/{id}")
+async def get_one_course(id: str):
+    logger.info(f"Received request to get one course with ID: {id}")
+    course = db.courses.find_one({"_id": ObjectId(id)})
+
+    if course is None:
+        logger.warning(f"Course not found with ID: {id}")
+        raise HTTPException(status_code=404, detail="Course not found")
+    course["_id"] = str(course["_id"])
+    logger.info(f"Returning course with ID: {id}")
+    return course
+
+#buscar cursos por nombre
+@app.get("/courses/{name}")
+async def get_course_by_name(name: str):
+    logger.info(f"Received request to get courses with name: {name}")
+    courses = list(db.courses.find({"name": name}))
+    if not courses:
+        logger.warning(f"No courses found with name: {name}")
+        raise HTTPException(status_code=404, detail="Course not found")
+    for course in courses:
+        course["_id"] = str(course["_id"])
+    logger.info(f"Returning {len(courses)} courses with name: {name}")
+    return courses
+
+#crear un curso
+@app.post("/courses")
+async def create_course(course: Course):
+    logger.info(f"Received request to create a new course")
+    result = db.courses.insert_one( {
+        "name": course.name,
+        "facultad": course.facultad,
+        "alumnos": course.alumnos
+    }
+    )
+    return {
+        "id": str(result.inserted_id),
+        "message": "Course created successfully"
+    }
+
+#actualizar un curso por id
+@app.put("/courses/updateCourse/{id}")
+async def update_course(id: str, course: Course):
+    logger.info(f"Received request to update course with ID: {id}")
+    try:
+        obj_id = ObjectId(id)
+    except Exception:
+        logger.error(f"Invalid ID format: {id}")
+        raise HTTPException(status_code=400, detail="Invalid ID format")
+
+    result = db.courses.update_one({"_id": obj_id}, {"$set": {
+        "name": course.name,
+        "facultad": course.facultad,
+        "alumnos": course.alumnos
+    }})
+
+    if result.matched_count == 0:
+        logger.warning(f"Course not found with ID: {id}")
+        raise HTTPException(status_code=404, detail="Course not found")
+
+    logger.info(f"Course with ID: {id} updated successfully")
+    return {"message": "Course updated successfully"}
+
+#eliminar un curso por id
+@app.delete("/courses/deleteCourse/{id}")
+async def delete_course(id: str):
+    logger.info(f"Received request to delete course with ID: {id}")
+    result = db.courses.delete_one({"_id": ObjectId(id)})
+    if result.deleted_count == 0:
+        logger.warning(f"Course not found with ID: {id}")
+        raise HTTPException(status_code=404, detail="Course not found")
+    logger.info(f"Course with ID: {id} deleted successfully")
+    return {"message": "Course deleted successfully"}
     
+
+
+
+
