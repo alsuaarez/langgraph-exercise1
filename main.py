@@ -32,7 +32,27 @@ class Course(BaseModel):
     facultad: str
     alumnos: list[Student]
 
+#definir el modelo de datos University
+class University(BaseModel):
+    name: str
+    carreras: list[str]
 
+#definir el modelo de datos Patents
+class Patents(BaseModel):
+    name: str
+    contributors: list[str]
+    date: str
+    uri: str
+    url:str
+    summary:str
+
+#definir el modelo de datos Scientists
+class Scientists(BaseModel):
+    name: str
+    email: str
+    category:str
+    cneaiField:str
+    universities:list[str]
 
 #crear un estudiante
 @app.post("/students")
@@ -279,6 +299,355 @@ async def get_students_by_course(course_id: str):
     
     logger.info(f"Returning students for course with ID: {course_id}")
     return course
+
+
+#crear una universidad
+@app.post("/universities")
+async def create_university(university: University):
+    logger.info(f"Received request to create a new university")
+    result = db.universities.insert_one( {
+        "name": university.name,
+        "carreras": university.carreras
+    }
+    )
+    return {
+        "id": str(result.inserted_id),
+        "message": "University created successfully"
+    }
+
+#buscar una universidad por id
+@app.get("/universities/oneUniversity/{id}")
+async def get_one_university(id: str):
+    logger.info(f"Received request to get one university with ID: {id}")
+    university = db.universities.find_one({"_id": ObjectId(id)})
+    if university is None:
+        logger.warning(f"University not found with ID: {id}")
+        raise HTTPException(status_code=404, detail="University not found")
+    university["_id"] = str(university["_id"])
+    logger.info(f"Returning university with ID: {id}")
+    return university
+
+#buscar una universidad por nombre
+@app.get("/universities/{name}")
+async def get_university_by_name(name: str):
+    logger.info(f"Received request to get universities with name: {name}")
+    universities = list(db.universities.find({"name": name}))
+    if not universities:
+        logger.warning(f"No universities found with name: {name}")
+        raise HTTPException(status_code=404, detail="University not found")
+    for university in universities:
+        university["_id"] = str(university["_id"])
+    logger.info(f"Returning {len(universities)} universities with name: {name}")
+    return universities
+
+#actualizar una universidad por id
+@app.put("/universities/updateUniversity/{id}")
+async def update_university(id: str, university: University):
+    logger.info(f"Received request to update university with ID: {id}")
+    try:
+        obj_id = ObjectId(id)
+    except Exception:
+        logger.error(f"Invalid ID format: {id}")
+        raise HTTPException(status_code=400, detail="Invalid ID format")
+
+    result = db.universities.update_one({"_id": obj_id}, {"$set": {
+        "name": university.name,
+        "carreras": university.carreras
+    }})
+
+    if result.matched_count == 0:
+        logger.warning(f"University not found with ID: {id}")
+        raise HTTPException(status_code=404, detail="University not found")
+
+    logger.info(f"University with ID: {id} updated successfully")
+    return {"message": "University updated successfully"}
+
+#eliminar una universidad por id
+@app.delete("/universities/deleteUniversity/{id}")
+async def delete_university(id: str):
+    logger.info(f"Received request to delete university with ID: {id}")
+    result = db.universities.delete_one({"_id": ObjectId(id)})
+    if result.deleted_count == 0:
+        logger.warning(f"University not found with ID: {id}")
+        raise HTTPException(status_code=404, detail="University not found")
+    logger.info(f"University with ID: {id} deleted successfully")
+    return {"message": "University deleted successfully"}
+
+
+#agregar una carrera a una universidad
+@app.put("/universities/{university_id}/add")
+async def add_carrera_to_university(university_id: str, carrera_ids: List[str]):
+    logger.info(f"Received request to add carreras to university with ID: {university_id}")
+
+    try:
+        university_obj_id = ObjectId(university_id)
+    except Exception:           
+        logger.error(f"Invalid university ID format: {university_id}")
+        raise HTTPException(status_code=400, detail="Invalid university ID format")
+
+    # Verificar que la universidad exista
+    university = db.universities.find_one({"_id": university_obj_id})
+    if university is None:
+        logger.warning(f"University not found with ID: {university_id}")
+        raise HTTPException(status_code=404, detail="University not found")
+
+    # Verificar que las carreras existan
+    carrera_obj_ids = [ObjectId(carrera_id) for carrera_id in carrera_ids]
+    existing_carreras = list(db.courses.find({"_id": {"$in": carrera_obj_ids}}))
+
+    if len(existing_carreras) != len(carrera_ids):
+        logger.warning("Some carreras IDs do not exist")
+        raise HTTPException(status_code=404, detail="Some carrera IDs do not exist")
+
+    # Agregar las carreras a la universidad
+    result = db.universities.update_one(
+        {"_id": university_obj_id},
+        {"$addToSet": {"carreras": {"$each": carrera_ids}}}
+    )
+
+    if result.matched_count == 0:
+        logger.warning(f"University not found with ID: {university_id}")
+        raise HTTPException(status_code=404, detail="University not found")
+
+    logger.info(f"Carreras added to university with ID: {university_id} successfully")
+    return {"message": "Carreras added successfully"}
+
+
+#buscar carreras de una universidad por sus atributos
+@app.get("/universities/{university_id}/carreras")
+async def get_carreras_by_university(university_id: str):
+    logger.info(f"Received request to get carreras by university with ID: {university_id}")
+
+    try:
+        university_obj_id = ObjectId(university_id)
+    except Exception:
+        logger.error(f"Invalid university ID format: {university_id}")
+        raise HTTPException(status_code=400, detail="Invalid university ID format")
+
+    # Buscar la universidad por su ID
+    university = db.universities.find_one({"_id": university_obj_id})
+    if university is None:
+        logger.warning(f"University not found with ID: {university_id}")
+        raise HTTPException(status_code=404, detail="University not found")
+
+    # Obtener los IDs de las carreras de la universidad
+    carrera_ids = university.get("carreras", [])
+
+    # Convertir los IDs a ObjectId
+    carrera_obj_ids = [ObjectId(carrera_id) for carrera_id in carrera_ids]
+
+    # Buscar los detalles de las carreras
+    carreras = list(db.courses.find({"_id": {"$in": carrera_obj_ids}}))
+
+    # Convertir el _id de cada carrera a string
+    for carrera in carreras:
+        carrera["_id"] = str(carrera["_id"])
+
+    # Reemplazar los IDs de las carreras con los documentos completos
+    university["carreras"] = carreras
+    university["_id"] = str(university["_id"])
+
+    logger.info(f"Returning carreras for university with ID: {university_id}")
+    return university
+
+#crear un cientifico
+@app.post("/scientists")
+async def create_scientist(scientist: Scientists):
+    logger.info(f"Received request to create a new scientist")
+    result = db.scientists.insert_one( {
+        "name": scientist.name,
+        "email": scientist.email,
+        "category": scientist.category,
+        "cneaiField": scientist.cneaiField,
+        "universities": scientist.universities
+    }
+    )
+    return {
+        "id": str(result.inserted_id),
+        "message": "Scientist created successfully"
+    }
+    
+#buscar un cientifico por id
+@app.get("/scientists/oneScientist/{id}")
+async def get_one_scientist(id: str):
+    logger.info(f"Received request to get one scientist with ID: {id}")
+    scientist = db.scientists.find_one({"_id": ObjectId(id)})
+    if scientist is None:
+        logger.warning(f"Scientist not found with ID: {id}")
+        raise HTTPException(status_code=404, detail="Scientist not found")
+    scientist["_id"] = str(scientist["_id"])
+    logger.info(f"Returning scientist with ID: {id}")
+    return scientist
+
+#buscar un cientifico por nombre
+@app.get("/scientists/{name}")
+async def get_scientist_by_name(name: str):
+    logger.info(f"Received request to get scientists with name: {name}")
+    scientists = list(db.scientists.find({"name": name}))
+    if not scientists:
+        logger.warning(f"No scientists found with name: {name}")
+        raise HTTPException(status_code=404, detail="Scientist not found")
+    for scientist in scientists:
+        scientist["_id"] = str(scientist["_id"])
+    logger.info(f"Returning {len(scientists)} scientists with name: {name}")
+    return scientists
+
+#actualizar un cientifico por id
+@app.put("/scientists/updateScientist/{id}")
+async def update_scientist(id: str, scientist: Scientists):
+    logger.info(f"Received request to update scientist with ID: {id}")
+    try:
+        obj_id = ObjectId(id)
+    except Exception:
+        logger.error(f"Invalid ID format: {id}")
+        raise HTTPException(status_code=400, detail="Invalid ID format")
+
+    result = db.scientists.update_one({"_id": obj_id}, {"$set": {
+        "name": scientist.name,
+        "email": scientist.email,
+        "category": scientist.category,
+        "cneaiField": scientist.cneaiField,
+        "universities": scientist.universities
+    }})
+
+    if result.matched_count == 0:
+        logger.warning(f"Scientist not found with ID: {id}")
+        raise HTTPException(status_code=404, detail="Scientist not found")
+
+    logger.info(f"Scientist with ID: {id} updated successfully")
+    return {"message": "Scientist updated successfully"}
+
+#eliminar un cientifico por id
+@app.delete("/scientists/deleteScientist/{id}")
+async def delete_scientist(id: str):
+    logger.info(f"Received request to delete scientist with ID: {id}")
+    result = db.scientists.delete_one({"_id": ObjectId(id)})
+    if result.deleted_count == 0:
+        logger.warning(f"Scientist not found with ID: {id}")
+        raise HTTPException(status_code=404, detail="Scientist not found")
+    logger.info(f"Scientist with ID: {id} deleted successfully")
+    return {"message": "Scientist deleted successfully"}
+
+#crear una patente
+@app.post("/patents")
+async def create_patent(patent: Patents):
+    logger.info(f"Received request to create a new patent")
+    result = db.patents.insert_one( {
+        "name": patent.name,
+        "contributors": patent.contributors,
+        "date": patent.date,
+        "uri": patent.uri,
+        "url": patent.url,
+        "summary": patent.summary
+    }
+    )
+    return {
+        "id": str(result.inserted_id),
+        "message": "Patent created successfully"
+    }
+
+#buscar una patente por id
+@app.get("/patents/onePatent/{id}")
+async def get_one_patent(id: str):
+    logger.info(f"Received request to get one patent with ID: {id}")
+    patent = db.patents.find_one({"_id": ObjectId(id)})
+    if patent is None:
+        logger.warning(f"Patent not found with ID: {id}")
+        raise HTTPException(status_code=404, detail="Patent not found")
+    patent["_id"] = str(patent["_id"])
+    logger.info(f"Returning patent with ID: {id}")
+    return patent
+
+#buscar una patente por nombre
+@app.get("/patents/{name}")
+async def get_patent_by_name(name: str):
+    logger.info(f"Received request to get patents with name: {name}")
+    patents = list(db.patents.find({"name": name}))
+    if not patents:
+        logger.warning(f"No patents found with name: {name}")
+        raise HTTPException(status_code=404, detail="Patent not found")
+    for patent in patents:
+        patent["_id"] = str(patent["_id"])
+    logger.info(f"Returning {len(patents)} patents with name: {name}")
+    return patents
+
+#actualizar una patente por id
+@app.put("/patents/updatePatent/{id}")
+async def update_patent(id: str, patent: Patents):
+    logger.info(f"Received request to update patent with ID: {id}")
+    try:
+        obj_id = ObjectId(id)
+    except Exception:   
+        logger.error(f"Invalid ID format: {id}")
+        raise HTTPException(status_code=400, detail="Invalid ID format")
+
+    result = db.patents.update_one({"_id": obj_id}, {"$set": {
+        "name": patent.name,
+        "contributors": patent.contributors,
+        "date": patent.date,
+        "uri": patent.uri,
+        "url": patent.url,
+        "summary": patent.summary
+    }})
+
+    if result.matched_count == 0:
+        logger.warning(f"Patent not found with ID: {id}")
+        raise HTTPException(status_code=404, detail="Patent not found")
+
+    logger.info(f"Patent with ID: {id} updated successfully")
+    return {"message": "Patent updated successfully"}
+
+#eliminar una patente por id
+@app.delete("/patents/deletePatent/{id}")
+async def delete_patent(id: str):
+    logger.info(f"Received request to delete patent with ID: {id}")
+    result = db.patents.delete_one({"_id": ObjectId(id)})
+    if result.deleted_count == 0:
+        logger.warning(f"Patent not found with ID: {id}")
+        raise HTTPException(status_code=404, detail="Patent not found")
+    logger.info(f"Patent with ID: {id} deleted successfully")
+    return {"message": "Patent deleted successfully"}
+
+
+
+
+
+        
+    
+    
+    
+
+    
+
+    
+    
+
+
+
+
+
+    
+    
+    
+
+
+    
+
+
+        
+
+
+
+
+
+
+
+
+
+        
+
+
+
 
 
 
